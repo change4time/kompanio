@@ -2,20 +2,33 @@
    "rules":{
       "accounts":{
          "$account_id":{
-            ".read":"root.child('authorizations/'+auth.uid+'/'+$account_id+'/read').val() == true || root.child('users/'+auth.uid+'/accountId').val() == $account_id"
+            ".read":"root.child('users/'+auth.uid+'/delegations/'+$account_id+'/read').val() == true || root.child('users/'+auth.uid+'/accountId').val() == $account_id"
          }
       },
       "users":{
          "$uid":{
-            ".read":"auth != null && auth.uid == $uid",
-            ".write":"auth != null && auth.uid == $uid"
+         	".read":"auth != null && auth.uid == $uid",
+         	"identity": {
+            	".write":"auth != null && auth.uid == $uid",
+         	},
+            "delegations": {
+            	"$delegation_id":{
+            		".write": "root.child('users/'+auth.uid+'/delegations/'+$delegation_id+'/manage').val() == true || root.child('users/'+auth.uid+'/accountId').val() == $delegation_id"
+            	}
+            }
          }
       },
       "authorizations":{
          "$uid":{
-            ".read":"auth != null && auth.uid == $uid",
+            ".read":false,
             ".write":"auth != null && auth.uid == $uid"
          }
+      },
+      "payments":{
+        "$pid":{
+        	".read":"auth != null",
+        	".write":"!data.exists() && auth != null && (newData.child('from').val() == root.child('users/'+auth.uid+'/accountId').val() || root.child('users/'+auth.uid+'/delegations/'+newData.child('from').val()+'/pay').val() == true)"
+      	}
       }
    }
 }
