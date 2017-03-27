@@ -1,5 +1,8 @@
 {
    "rules":{
+     	"universal":{
+         ".read":true
+      },
       "accounts":{
          "$account_id":{
             ".read":"root.child('users/'+auth.uid+'/delegations/'+$account_id+'/read').val() == true || root.child('users/'+auth.uid+'/accountId').val() == $account_id"
@@ -9,7 +12,7 @@
          "$uid":{
          	".read":"auth != null && auth.uid == $uid",
          	"identity": {
-            	".write":"auth != null && auth.uid == $uid",
+            	".write":"auth != null && auth.uid == $uid"
          	},
             "delegations": {
             	"$delegation_id":{

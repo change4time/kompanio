@@ -29,9 +29,10 @@ exports.authorize = functions.https.onRequest((request, response) => {
 		} else {
 			db.ref("accounts/"+request.body.to).once("value", function(snapTo) {
 				const toAccount = snapTo.val();
+				const maxIncome = 999999999999; //TODO: Compute from upcomingSpeedUpdated to balanceUpdated + from balanceUpdated to now
 				if(toAccount == null) {
 					response.status(404).send("Recipient account not found");
-				} else if(toAccount.maxBalance != null && (toAccount.balance + request.body.amount) > toAccount.maxBalance) {
+				} else if(maxIncome != null && (toAccount.income + request.body.amount) > maxIncome) {
 					response.status(300).send("Recipient balance over quota");
 				} else {
 					db.ref("accounts/"+card.accountId).once("value", function(snapFrom) {
@@ -62,10 +63,12 @@ exports.createAccount = functions.database.ref('users/{pushId}')
 
         let account = {
           type: "personal",
+          income: 0,
+          expense: 0,
           balance: 0,
           balanceUpdated: new Date().getTime(),
-          speed: 0,
-          upcoming: 0,
+          upcomingSpeed: 0,
+          upcomingSpeedUpdated: new Date().getTime(),
           name: user.identity.firstName + ' ' + user.identity.lastName.toUpperCase(),
           imageUrl: user.identity.imageUrl,
         };
@@ -90,6 +93,7 @@ exports.processPayment = functions.database.ref('payments/{paymentId}')
         fromRef.transaction(function (account) {
           if(account == null)
               return null;
+          account.expense += payment.amount;
           account.balance -= payment.amount;
           account.balanceUpdated = updated;
           return account;
@@ -97,6 +101,7 @@ exports.processPayment = functions.database.ref('payments/{paymentId}')
         toRef.transaction(function (account) {
           if(account == null)
               return null;
+          account.income += payment.amount;
           account.balance += payment.amount;
           account.balanceUpdated = updated;
           return account;
