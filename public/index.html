@@ -1,12 +1,87 @@
-<!DOCTYPE html>
 <html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no, width=device-width">
-    <base href="/">
-    <title>Kompanio</title>
-</head>
-<body>
-	Welcome
-</body>
+	<head>
+		<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+		<title>Kompanio - Le réseau économique libre</title>
+		<link href='//fonts.googleapis.com/css?family=Lato:100' rel='stylesheet' type='text/css'>
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+		<style>
+			.main-container {
+				margin: 0;
+				padding: 0;
+				width: 100%;
+				height: 70%;
+				color: #B0BEC5;
+				display: table;
+				font-weight: 100;
+				font-family: 'Lato';
+			}
+
+			.sub-container {
+				text-align: center;
+				display: table-cell;
+				vertical-align: middle;
+			}
+
+			.content {
+				text-align: center;
+				display: inline-block;
+			}
+
+			.title {
+				font-size: 96px;
+				margin-bottom: 40px;
+			}
+
+			.quote {
+				font-size: 24px;
+			}
+			
+			.hide {
+				display: none !important;
+			}
+		</style>
+		<script type='text/javascript'>
+			function load() {
+				window.location = "http://www.change4time.org";
+			}
+			function show(show) {
+				var doc = document.getElementById("1");
+				var doc2 = document.getElementById("2");
+				if(show) {
+					doc.classList.add("hide");
+					doc2.classList.remove("hide");
+				} else {
+					doc2.classList.add("hide");
+					doc.classList.remove("hide");
+				}
+			}
+			//setTimeout(load, 2000);
+		</script>
+	</head>
+	<body onload="show(false);">
+		<div class="container">
+			<div class="row">
+				<div class="col-xs-12 main-container" id="1" >
+					<div class="sub-container">
+						<div class="content">
+							<div class="title visible-xs visible-sm" >Prochainement...</div>
+							<div class="title hidden-xs hidden-sm" >Prochainement...</div>
+							<div class="quote hidden-xs">Ouverture du premier réseau économique libre, juste et équitable</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-xs-12 text-center" id="2">
+					<br/><br/>
+					<img src="./app-fr.png" height="450"/>
+					<br/><br/>
+				</div>
+			</div>
+			<div class="row">
+				<div class="col-md-4 col-md-offset-4 col-xs-8 col-xs-offset-2">
+					<button type="button" class="btn btn-primary btn-lg btn-block" onclick="load();" onMouseOver="show(true);"  onmouseout="show(false);" >by Change4Time</button>
+				</div>
+			</div>
+		</div>
+	</body>
 </html>

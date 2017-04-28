@@ -5,33 +5,65 @@
       },
       "accounts":{
          "$account_id":{
-            ".read":"root.child('users/'+auth.uid+'/delegations/'+$account_id+'/read').val() == true || root.child('users/'+auth.uid+'/accountId').val() == $account_id"
+         		".read":"auth.uid == $account_id",
+            "state":{
+            	".read":"root.child('accounts/'+$account_id+'/delegations/'+auth.uid).exists()"
+            },
+            "payments":{
+            	".read":"root.child('accounts/'+$account_id+'/delegations/'+auth.uid+'/read').val() == true",
+            	".indexOn": ["created", "amount", "name", "label"]
+            },
+            "flows":{
+            	".read":"root.child('accounts/'+$account_id+'/delegations/'+auth.uid+'/read').val() == true",
+            	".indexOn": ["created", "amount", "name", "label"]
+            },
+            "delegations": {
+            	".read":"data.child(auth.uid).exists()",
+            	".write":"auth.uid == $account_id || data.child(auth.uid+'/manage').val() == true"
+            }
          }
+      },
+      "auths":{
+        "$uid":{
+        	".read":"auth != null && auth.uid == $uid",
+        	".write":"auth != null && auth.uid == $uid",
+        	"identity":{
+        		"firstName": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 255" },
+        		"lastName": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 255" },
+        		"birthDate": { ".validate": "newData.isString() && newData.val().matches(/^(19|20)[0-9][0-9][-\\/. ](0[1-9]|1[012])[-\\/. ](0[1-9]|[12][0-9]|3[01])$/)" }
+        	},
+        	"contact":{
+        		"email": { ".validate": "newData.isString() && newData.val().matches(/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,4}$/i)" },
+        		"phone": { ".validate": "newData.isString() && newData.val().matches(/^[\\+]?[(]?[0-9]{3}[)]?[-\\s\\.]?[0-9]{3}[-\\s\\.]?[0-9]{4,6}$/i)" }
+        	},
+        	"infos":{
+        		"can": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 255" },
+        		"know": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 255" },
+        		"like": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 255" }
+        	}
+        }
       },
       "users":{
          "$uid":{
-         	".read":"auth != null && auth.uid == $uid",
-         	"identity": {
-            	".write":"auth != null && auth.uid == $uid"
-         	},
-            "delegations": {
-            	"$delegation_id":{
-            		".write": "root.child('users/'+auth.uid+'/delegations/'+$delegation_id+'/manage').val() == true || root.child('users/'+auth.uid+'/accountId').val() == $delegation_id"
-            	}
-            }
-         }
+						".read":"auth != null && auth.uid == $uid",
+						"contact": {
+							".write":"auth != null && auth.uid == $uid"
+						},
+						"infos": {
+							".write":"auth != null && auth.uid == $uid"
+						}
+					}
       },
       "authorizations":{
          "$uid":{
             ".read":false,
-            ".write":"auth != null && auth.uid == $uid"
+            ".write":"auth != null && (newData.child('payment/to/account').val() == auth.uid || root.child('users/'+auth.uid+'/delegations/'+newData.child('payment/to/account').val()+'/receive').val() == true)"
          }
       },
       "payments":{
         "$pid":{
-        	".read":"auth != null",
-        	".write":"!data.exists() && auth != null && (newData.child('from').val() == root.child('users/'+auth.uid+'/accountId').val() || root.child('users/'+auth.uid+'/delegations/'+newData.child('from').val()+'/pay').val() == true)"
-      	}
+        	".write":"!data.exists() && auth != null && newData.child('amount').val() > 0 && (newData.child('from/id').val() == auth.uid || root.child('users/'+auth.uid+'/delegations/'+newData.child('from/id').val()+'/pay').val() == true || (!newData.child('from/id').exists() && newData.child('authorization/signature').isString()))"
+        }
       }
    }
 }
