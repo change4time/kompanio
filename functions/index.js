@@ -58,43 +58,62 @@ const validateFirebaseIdToken = (req, res, next) => {
   });
 };
 
-const executeTransaction = (from, to, amount) => {
+const flowTo = (flow, nb) => {
+	let to = {
+		amount: flow.amount,
+		account: flow.from.id ? flow.from.id : 'KOMPANIO-NETWORK',
+		by: flow.by,
+		name: flow.from.name,
+		label: flow.to.label,
+		start: flow.start
+	};
+	if(nb) {
+		to.amount *= nb;
+		to.nbAccount = nb;
+	}
+	return to;
+}
+
+const flowFrom = (flow, nb) => {
+	let from = {
+		amount: -flow.amount,
+		account: flow.to.id ? flow.to.id : 'KOMPANIO-NETWORK',
+		by: flow.by,
+		name: flow.to.name,
+		label: flow.from.label,
+		start: flow.start
+	};
+	if(nb) {
+		from.amount *= nb;
+		from.nbAccount = nb;
+	}
+	return from;
+}
+
+const executeFlowTransaction = (flowId, flow) => {
 	return new Promise((resolve, reject) => {
-		amount = Math.abs(amount);
-		const updated = new Date().getTime();
-		var fromRef = db.ref("accounts/"+from+"/state");
-		var toRef = db.ref("accounts/"+to+"/state");
-		fromRef.transaction(function (account) {
-			if(account == null)
-					return null;
-			account.current.expense += amount;
-			account.current.balance -= amount;
-			account.current.updated = updated;
-			return account;
-		}, function(error, committed, snapshot) {
-			if (error) {
-				reject(error);
-			} else if (!committed) {
-				reject('Bad FROM account');
+		let updates = {};
+		if(flow.from.id && flow.to.id) {
+			updates['accounts/'+flow.from.id+'/flows/'+flowId] = flowFrom(flow, null);
+			updates['accounts/'+flow.to.id+'/flows/'+flowId] = flowTo(flow, null);
+			resolve(updates);
+		} else {
+			let accountId = flow.from.id ? flow.from.id : flow.to.id;
+			if(!accountId) {
+				console.error("From and To accounts can't be null");
 			} else {
-				toRef.transaction(function (account) {
-					if(account == null)
-							return null;
-					account.current.income += amount;
-					account.current.balance += amount;
-					account.current.updated = updated;
-					return account;
-				}, function(error, committed, snapshot) {
-					if (error) {
-						reject(error);
-					} else if (!committed) {
-						reject('Bad TO account');
-					} else {
-						resolve(updated);
+				db.ref('accounts/'+accountId+'/members').once('value', function(snap) {
+					const members = snap.val();
+					let nb = 0;
+					for(let bcAccount in members) {
+						updates['accounts/'+bcAccount+'/flows/'+flowId] = flow.from.id ? flowTo(flow, null) : flowFrom(flow, null);
+						nb++;
 					}
+					updates['accounts/'+accountId+'/flows/'+flowId] = flow.from.id ? flowFrom(flow, nb) : flowTo(flow, nb);
+					resolve(updates);
 				});
 			}
-		});
+		}
 	});
 }
 
@@ -291,35 +310,35 @@ exports.approveUser = functions.https.onRequest((request, response) => {
 		
 		/* User account */
 		let account = {
-			type: 'personal',
-			created: created.valueOf(),
-			current: {
-				balance: 0,
-				expense: 0,
-				income: 0,
-				updated: created.valueOf()
+			state: {
+				type: 'personal',
+				created: created.valueOf(),
+				current: {
+					balance: 0,
+					expense: 0,
+					income: 0,
+					updated: created.valueOf()
+				},
+				ongoing: {
+					balance: 0,
+					expense: 0,
+					income: 0,
+					updated: created.valueOf(),
+					nextUpdate: now.valueOf()
+				}
 			},
-			ongoing: {
-				balance: 0,
-				expense: 0,
-				income: 0,
-				updated: created.valueOf()
-			}
+			flows: {}
 		};
 		
-		return db.ref('/universal').once("value", function(snap) {
-			var universals = snap.val();
-			let paymentsArray = [];
-			for(date in universals) {
-				let universal = universals[date];
-				let payment = { start: date, end: universal.end, speed: universal.balance };
-				paymentsArray.push(payment);
-			}
-			account = compute(now, account, paymentsArray);
-
+		return db.ref('flows').orderByChild("to/id").equalTo(null).once("value", function(snap) {
+			snap.forEach(function(data) {
+    		console.log("Add " + data.key + " flow to new user");
+    		account.flows[data.key] = flowTo(data.val(), null);
+  		});
+			
 			/* Create account */
 			console.log("Creating account : ", account);
-			return db.ref('accounts/' + userRecord.uid + "/state").set(account, function(error) {
+			return db.ref('accounts/' + userRecord.uid).set(account, function(error) {
 				if (error) {
 					console.log(error);
 					response.status(500).send(error);
@@ -365,7 +384,8 @@ exports.approveGroup = functions.https.onRequest((request, response) => {
 					balance: 0,
 					expense: 0,
 					income: 0,
-					updated: now.valueOf()
+					updated: now.valueOf(),
+					nextUpdate: now.valueOf()
 				}
 			},
 			delegations: {}
@@ -437,6 +457,10 @@ exports.processPayment = functions.database.ref('payments/{paymentId}').onWrite(
 	const payment = event.data.val();
 	const paymentId = event.params.paymentId;
 	
+	if(!payment) {
+		return null;
+	}
+	
 	/* Payment need an authorization */
 	if(payment.from.id == null) {
 		return authorizePayment(payment).then((card) => {
@@ -455,25 +479,10 @@ exports.processPayment = functions.database.ref('payments/{paymentId}').onWrite(
 		});
 	
 	/* Payment not executed yet */
-	} else if(payment.executed == null) {
-		return executeTransaction(payment.from.id, payment.to.id, payment.amount).then((updated) => {
-			return db.ref('payments/'+paymentId+'/executed').set(updated, function(error) {
-				if (error) {
-					console.log("Fail to set transaction executed flag ", error);
-				} else {
-					// TODO : Notify users
-				}
-			});
-		}, (error) => {
-			console.log("Transaction processing failure ", error);
-		});
-		
-	/* Payment finalized, export to user account */
 	} else {
 		console.log("Save payments ", payment);	
 		let from = {
 			created: payment.created,
-			executed: payment.executed,
 			amount: -payment.amount,
 			account: payment.to.id,
 			by: payment.by,
@@ -483,7 +492,6 @@ exports.processPayment = functions.database.ref('payments/{paymentId}').onWrite(
 	
 		let to = {
 			created: payment.created,
-			executed: payment.executed,
 			amount: payment.amount,
 			account: payment.from.id,
 			by: payment.by,
@@ -502,21 +510,176 @@ exports.processPayment = functions.database.ref('payments/{paymentId}').onWrite(
 	}
 });
 
+exports.updateBalance = functions.database.ref('accounts/{accountId}/payments/{paymentId}').onWrite(event => {
+	const payment = event.data.val();
+	const accountId = event.params.accountId;
+	const paymentId = event.params.paymentId;
+
+	let amount = payment.amount;
+	if (event.data.previous.exists()) { // Update
+		const old = event.data.previous.val();
+		amount -= old.amount;
+	}
+	
+	if(amount != 0) {
+		return db.ref("accounts/"+accountId+"/state").transaction(function (account) {
+			if(account == null)
+					return null;
+			if(amount > 0)
+				account.current.income += amount;
+			else
+				account.current.expense += amount;
+			account.current.balance += amount;
+			account.current.updated = new Date().getTime();
+			return account;
+		}, function(error, committed, snapshot) {
+			if (error) {
+				console.error(error);
+			} else if (!committed) {
+				console.error('Bad account ' + accountId);
+			} else {
+				console.log('Balance updated for ' + accountId);
+			}
+		});
+	} else {
+		return null;
+	}
+});
+
+/**
+*	Process an incoming flow
+*/
+exports.processFlow = functions.database.ref('flows/{flowId}').onWrite(event => {
+	const flowId = event.params.flowId;
+	const flow = event.data.val();
+	
+	if(!flow) {
+		return null;
+	}
+
+	return executeFlowTransaction(flowId, flow).then((updates) => {
+		console.log("Save flows ", flow);	
+		return db.ref().update(updates, function(error) {
+			if (error) {
+				console.log("Fail to store flow ", error);
+			} else {
+				// TODO : Notify users
+			}
+		});
+	}, (error) => {
+		console.log("Transaction processing failure ", error);
+	});
+});
+
+/**
+*	Update ongoing balance if flows changes
+*/
+exports.updateOngoingBalance = functions.database.ref('accounts/{accountId}/flows/{flowId}').onWrite(event => {
+	const accountId = event.params.accountId;
+	const flowId = event.params.flowId;
+	const flow = event.data.val();
+	let speed = flow.amount;
+  if (event.data.previous.exists()) { // Update
+		const old = event.data.previous.val();
+		speed -= old.amount;
+	}
+	
+	if(speed != 0) {
+		return db.ref("accounts/"+accountId+"/state").transaction(function (account) {
+			if(account == null)
+					return null;
+		
+			const now = moment.utc();
+			const start = moment.utc(flow.start);
+			const end = flow.end != null ? moment.utc(flow.end) : now;
+	
+			/* Update account */
+			let amount = now.diff(account.current.updated) * account.ongoing.balance;
+		
+			if(start.isSameOrBefore(now) && end.isBefore(now)) { // Past flow
+				amount += end.diff(start) * speed;
+			} else if(start.isSameOrBefore(now) && end.isSameOrAfter(now)) { // Ongoing flow
+				amount += now.diff(start) * speed;
+		
+				if(speed > 0) {
+					account.ongoing.income += speed;
+				} else {
+					account.ongoing.expense += speed;
+				}
+				account.ongoing.balance += speed;
+				if(now.isSameOrAfter(account.ongoing.nextUpdate))
+					account.ongoing.nextUpdate = end.valueOf();
+				else
+					account.ongoing.nextUpdate = Math.min(account.ongoing.nextUpdate, end.valueOf());
+				account.ongoing.updated = now.valueOf();
+			} else if(start.isAfter(now)) { // Future flow
+				if(now.isSameOrAfter(account.ongoing.nextUpdate))
+					account.ongoing.nextUpdate = start.valueOf();
+				else
+					account.ongoing.nextUpdate = Math.min(account.ongoing.nextUpdate, start.valueOf());
+			}
+			console.log("COMPUTE FLOW - %s to %s : %d", start.format("YYYY-MM-DD HH:mm:ss"), end.format("YYYY-MM-DD HH:mm:ss"), amount);
+
+			if(amount != 0) {
+				if(amount > 0) {
+					account.current.income += amount;
+				} else {
+					account.current.expense += amount;
+				}
+				account.current.balance += amount;
+			}
+			account.current.updated = now.valueOf();
+		
+			return account;
+		
+		}, function(error, committed, snapshot) {
+			if (error) {
+				console.error(error);
+			} else if (!committed) {
+				console.error('Bad account '+accountId);
+			} else {
+				console.log('Ongoing updated for '+accountId);
+			}
+		});
+	} else {
+		return null;
+	}
+});
+
 /**
 *	Process universal updates
 */
-exports.processUniversal = functions.database.ref('universal/{date}').onWrite(event => {
-	const universal = event.data.val();
+exports.processUniversal = functions.database.ref('universal/{date}/flows/{accountId}').onWrite(event => {
+	const flow = event.data.val();
 	const start = moment(event.params.date);
+	const accountId = event.params.accountId;
 	
-	if(!universal.end && universal.flows) {
-		let updates = {};
-		for(let accountId in universal.flows) {
+	return db.ref("universal/"+event.params.date+"/members").once("value", function(snap) {
+		var members = snap.val();
+		if(members == null) {
+			console.error("Invalid members " + members);
+		} else {
+			let updates = {};
 			if(accountId.startsWith('GIG')) {
-				let amount = -universal.flows[accountId].amount * universal.members;
-				updates['accounts/'+accountId+'/state/ongoing/balance'] = amount;
-				updates['accounts/'+accountId+'/state/ongoing/income'] = amount;
-				console.log('New amount for ' + accountId + ' : ' + amount);
+				let amount = -flow.amount * members;
+		
+				var toRef = db.ref("accounts/"+accountId+"/state");
+				toRef.transaction(function (account) {
+					if(account == null)
+							return null;
+					return computeFlow(account, start, flow.end, amount);
+				});
+				let to = {
+					amount: amount,
+					account: "KOMPANIO-NETWORK",
+					by: "KOMPANIO-NETWORK",
+					name: "Kompanio Network",
+					label: flow.label
+				};
+				updates['accounts/'+accountId+'/flows/universal'] = to;
+				//updates['accounts/'+accountId+'/state/ongoing/balance'] = amount;
+				//updates['accounts/'+accountId+'/state/ongoing/income'] = amount;
+				//console.log('New amount for ' + accountId + ' : ' + amount);
 			} else {
 				/**
 				 * We update account ongoing balance instead of alter with transaction
@@ -525,13 +688,13 @@ exports.processUniversal = functions.database.ref('universal/{date}').onWrite(ev
 				**/
 				console.error('Universal budget contains non GIG account, ignore it');
 			}
+			return db.ref().update(updates, function(error) {
+				if (error) {
+					console.log("Fail to store universals ", error);
+				}
+			});
 		}
-		return db.ref().update(updates, function(error) {
-			if (error) {
-				console.log("Fail to store universals ", error);
-			}
-		});
-	}
+	});
 });
 
 /**
