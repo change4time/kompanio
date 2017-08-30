@@ -578,12 +578,17 @@ exports.updateOngoingBalance = functions.database.ref('accounts/{accountId}/flow
 	const accountId = event.params.accountId;
 	const flowId = event.params.flowId;
 	const flow = event.data.val();
-	let speed = flow.amount;
-  if (event.data.previous.exists()) { // Update
+	let speed = 0;
+	if(flow) {
+		speed += flow.amount;
+	} else {
+		flow = event.data.previous.val();
+	}
+	if (event.data.previous.exists()) { // Update
 		const old = event.data.previous.val();
 		speed -= old.amount;
 	}
-	
+		
 	if(speed != 0) {
 		return db.ref("accounts/"+accountId+"/state").transaction(function (account) {
 			if(account == null)
@@ -646,6 +651,51 @@ exports.updateOngoingBalance = functions.database.ref('accounts/{accountId}/flow
 	}
 });
 
+
+/**
+*	Process a member change
+*/
+exports.processMembers = functions.database.ref('accounts/{accountId}/members/{memberId}').onWrite(event => {
+	const accountId = event.params.accountId;
+	const memberId = event.params.memberId;
+	const member = event.data.exists();
+	var updates = {};
+	
+	if(member && event.data.previous.exists()) { // No existence changes
+		return null;
+	}
+				
+	return db.ref('flows').orderByChild("to/id").equalTo(accountId).once("value", function(snap) {
+		snap.forEach(function(data) {
+			let flow = data.val();
+			if(!flow.from.id) {
+				if(member) {
+					updates['accounts/'+memberId+'/flows/'+data.key] = flow.from.id ? flowTo(flow, null) : flowFrom(flow, null);
+				} else {
+					updates['accounts/'+memberId+'/flows/'+data.key] = {};
+				}
+				db.ref('accounts/'+accountId+'/flows/'+data.key).transaction(function (fl) {
+					if(fl == null)
+							return null;
+					if(member) {
+						fl.amount += flow.amount;
+						fl.nbAccount++;
+					} else {
+						fl.amount -= flow.amount;
+						fl.nbAccount--;
+					}
+					return fl;
+				});
+			}
+		});
+		return db.ref().update(updates, function(error) {
+			if (error) {
+				console.log("Fail to store flow ", error);
+			}
+		});
+	});
+});
+				
 /**
 *	Process universal updates
 */
