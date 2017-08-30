@@ -22,7 +22,7 @@ const THUMB_MAX_WIDTH = 200;
 const THUMB_PREFIX = 'thumb_';
 const JPEG_EXTENSION = 'jpg';
 
-const BUCKET_NAME = 'bank4time.appspot.com';
+const BUCKET_NAME = 'kompanio-network.appspot.com';
 const PHOTOS_DIR = 'photos/';
 const PHOTO_PATH = PHOTOS_DIR+'${key}.jpg';
 const THUMB_PHOTO_PATH = PHOTOS_DIR+THUMB_PREFIX+'${key}.jpg';
@@ -279,7 +279,7 @@ exports.createUser = functions.https.onRequest((request, response) => {
 		email: email,
 		password: password,
 		displayName: name,
-		photoURL: data.photoURL,
+		photoURL: 'http://www.freeiconspng.com/uploads/profile-icon-9.png',//data.photoURL,
 		disabled: true
 	}).then(function(userRecord) {
 		console.log("Successfully created new user:", userRecord.uid);
